@@ -12,11 +12,13 @@
 
 import {
   CAP_CONFIGURATION_READ,
+  CAP_CONFIGURATION_WRITE,
   CAP_FIX_ENTITY_CREATE,
   CAP_ORG_READ_ALL,
   CAP_SITE_CREATE,
   CAP_SITE_READ_ALL,
   CAP_SUGGESTION_WRITE,
+  CAP_TRIAL_USER_READ,
 } from './capability-constants.js';
 
 /**
@@ -95,10 +97,10 @@ export const INTERNAL_ROUTES = [
   'GET /sites/:siteId/agentic-traffic/by-status',
   'GET /sites/:siteId/agentic-traffic/by-user-agent',
   'GET /sites/:siteId/agentic-traffic/by-url',
+  'POST /sites/:siteId/agentic-traffic/hits-by-urls',
   'GET /sites/:siteId/agentic-traffic/filter-dimensions',
   'GET /sites/:siteId/agentic-traffic/weeks',
   'GET /sites/:siteId/agentic-traffic/movers',
-  'GET /sites/:siteId/agentic-traffic/has-data',
   'POST /sites/:siteId/agentic-traffic/urls/export',
   'GET /sites/:siteId/agentic-traffic/urls/export/:exportId',
 
@@ -137,9 +139,8 @@ export const INTERNAL_ROUTES = [
   'PATCH /plg/records/:plgOnboardingId',
   'DELETE /plg/records/:plgOnboardingId',
 
-  // Tier-specific - user activities (POST only), trial users, user details: end-user/admin flows
+  // Tier-specific - user activities (POST only), user details: end-user/admin flows
   'POST /sites/:siteId/user-activities',
-  'GET /organizations/:organizationId/trial-users',
   'GET /admin/users/:userId',
   'GET /organizations/:organizationId/userDetails/:externalUserId',
   'POST /organizations/:organizationId/userDetails',
@@ -221,21 +222,23 @@ const routeRequiredCapabilities = {
   // Audits
   'GET /audits/latest/:auditType': 'audit:read',
 
-  // Consent Banner
-  'POST /consent-banner': 'organization:write',
+  // Consent Banner — POST is a screenshot *scrape* trigger, so it's gated like
+  // the sibling `/tools/scrape/jobs` POST (scrapeJob:write) rather than
+  // organization:write, letting S2S scrape consumers (e.g. Mystique) trigger it.
+  'POST /consent-banner': 'scrapeJob:write',
   'GET /consent-banner/:jobId': 'organization:read',
 
   // Configuration
   'GET /configurations/latest': CAP_CONFIGURATION_READ,
-  'PATCH /configurations/latest': 'configuration:write',
-  'POST /configurations/:version/restore': 'configuration:write',
+  'PATCH /configurations/latest': CAP_CONFIGURATION_WRITE,
+  'POST /configurations/:version/restore': CAP_CONFIGURATION_WRITE,
   'GET /configurations/:version': CAP_CONFIGURATION_READ,
-  'POST /configurations/audits': 'configuration:write',
-  'DELETE /configurations/audits/:auditType': 'configuration:write',
-  'PUT /configurations/latest/queues': 'configuration:write',
-  'PATCH /configurations/latest/jobs/:jobType': 'configuration:write',
-  'PATCH /configurations/latest/handlers/:handlerType': 'configuration:write',
-  'PATCH /configurations/sites/audits': 'configuration:write',
+  'POST /configurations/audits': CAP_CONFIGURATION_WRITE,
+  'DELETE /configurations/audits/:auditType': CAP_CONFIGURATION_WRITE,
+  'PUT /configurations/latest/queues': CAP_CONFIGURATION_WRITE,
+  'PATCH /configurations/latest/jobs/:jobType': CAP_CONFIGURATION_WRITE,
+  'PATCH /configurations/latest/handlers/:handlerType': CAP_CONFIGURATION_WRITE,
+  'PATCH /configurations/sites/audits': CAP_CONFIGURATION_WRITE,
 
   // Organizations
   'GET /organizations': CAP_ORG_READ_ALL,
@@ -279,6 +282,12 @@ const routeRequiredCapabilities = {
   'GET /v2/orgs/:spaceCatId/brands/:brandId/serenity/tags': 'organization:read',
   'GET /v2/orgs/:spaceCatId/brands/:brandId/serenity/models': 'organization:read',
   'PUT /v2/orgs/:spaceCatId/brands/:brandId/serenity/models': 'organization:write',
+  // Org-level Semrush catalogue lookups (brand-independent): read-only, org
+  // access enforced in the controller (listOrgModels / listOrgLanguages).
+  'GET /v2/orgs/:spaceCatId/serenity/models': 'organization:read',
+  'GET /v2/orgs/:spaceCatId/serenity/languages': 'organization:read',
+  'POST /v2/orgs/:spaceCatId/brands/:brandId/serenity/activate': 'organization:write',
+  'POST /v2/orgs/:spaceCatId/brands/:brandId/serenity/deactivate': 'organization:write',
   'GET /v2/orgs/:spaceCatId/sites/:siteId/brand': 'organization:read',
   'GET /org/:spaceCatId/brands/:brandId/fanout-report': 'brand:read',
   'GET /org/:spaceCatId/brands/all/brand-presence/filter-dimensions': 'brand:read',
@@ -339,6 +348,10 @@ const routeRequiredCapabilities = {
   // GET /sites is the cross-tenant list endpoint - guarded by site:readAll, not site:read.
   // Tenant-scoped /sites/:siteId stays on site:read. See READALL_CAPABILITY_DESIGN.md.
   'GET /sites': CAP_SITE_READ_ALL,
+  // GET /sites/:siteId/identity is a readAll-class single-site route: it returns only the
+  // routing identity (org ids, baseURL, deliveryType) a site:readAll holder can already
+  // derive from the bulk list + org join, so it is gated on site:readAll, not site:read.
+  'GET /sites/:siteId/identity': CAP_SITE_READ_ALL,
   'POST /sites': CAP_SITE_CREATE,
   'POST /sites/detect/jobs': 'site:write',
   'GET /sites/detect/jobs/:jobId': 'site:read',
@@ -364,6 +377,9 @@ const routeRequiredCapabilities = {
   'PATCH /sites/:siteId/url-store': 'site:write',
   'POST /sites/:siteId/url-store/delete': 'site:write',
 
+  // Agentic traffic
+  'GET /sites/:siteId/agentic-traffic/has-data': 'site:read',
+
   // Agentic URL classification rules
   'GET /sites/:siteId/agentic-categories': 'site:read',
   'POST /sites/:siteId/agentic-categories': 'site:write',
@@ -377,8 +393,8 @@ const routeRequiredCapabilities = {
   'PATCH /sites/:siteId/:auditType': 'audit:write',
   'GET /sites/:siteId/latest-audit/:auditType': 'audit:read',
   'GET /sites/:siteId/experiments': 'experiment:read',
-  'GET /sites/:siteId/geo-experiments': 'geoExperiment:read',
-  'GET /sites/:siteId/geo-experiments/:geoExperimentId': 'geoExperiment:read', // detail includes prompts
+  'GET /sites/:siteId/geo-experiments': 'site:read',
+  'GET /sites/:siteId/geo-experiments/:geoExperimentId': 'site:read', // detail includes prompts
   'GET /sites/:siteId/metrics/:metric/:source': 'site:read',
   'GET /sites/:siteId/metrics/:metric/:source/by-url/:base64PageUrl': 'site:read',
   'GET /sites/:siteId/latest-metrics': 'site:read',
@@ -608,12 +624,18 @@ const routeRequiredCapabilities = {
   'GET /llmo/ai-visibility/v1/prompt/gap-prompts': 'report:read',
   'GET /llmo/ai-visibility/v1/prompt/gap-prompts-export': 'report:read',
   'GET /llmo/ai-visibility/v1/prompt/prompt-response': 'report:read',
+  'GET /llmo/ai-visibility/v1/brand/stats-by-country': 'report:read',
+  'GET /llmo/ai-visibility/v1/brand/stats-by-llm': 'report:read',
+  'GET /llmo/ai-visibility/v1/meta/meta': 'report:read',
 
   // User Activities
   'GET /sites/:siteId/user-activities': 'trialUser:read',
 
   // Site Enrollments
   'GET /sites/:siteId/site-enrollments': 'siteEnrollment:read',
+
+  // Trial Users
+  'GET /organizations/:organizationId/trial-users': CAP_TRIAL_USER_READ,
 
   // Entitlements
   'GET /organizations/:organizationId/entitlements': 'entitlement:read',
