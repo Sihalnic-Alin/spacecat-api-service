@@ -152,7 +152,7 @@
     "chai": "6.2.2",
     "chai-as-promised": "8.0.2",
     "dotenv": "17.4.2",
-    "dynamo-db-local": "^10.3.0",
+    "dynamo-db-local": "^11.0.0",
     "electrodb": "3.9.0",
     "eslint": "9.39.4",
     "esmock": "2.7.4",
